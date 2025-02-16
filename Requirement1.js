@@ -1,102 +1,160 @@
 
-var inventoryItem = [], transactions = [], categories = [], customerFieldsRegistory = {};
-
-function doStuff(action, newItem) {
-    if (["add", "edit", "remove"].includes(action)) {
-        if (action === "add") {
-            addItem(newItem)
-        } else if (action === "edit" && inventoryItem[newItem[0]]) {
-            editItem(inventoryItem[newItem[0]])
-        } else if (action === "remove" && inventoryItem[newItem[0]]) {
-            removeItem(inventoryItem[newItem[0]])
-        }
-        console.log("=== Dashboard ===\nItems: " + inventoryItem.length
-             + "\nTotal: $" + inventoryItem.reduce((tot, x) => tot 
-             + x.quantity * x.price, 0).toFixed(2) 
-             + "\nCats: " + categories.join(', '));
+class Item {
+    constructor(name, category, quantity, price, units, customerFields = {}) {
+        this.name = name;
+        this.category = category;
+        this.quantity = quantity;
+        this.price = price;
+        this.units = units;
+        this.date = new Date();
+        this.customerFields = customerFields;
     }
-    if (["Sale", "Restock"].includes(action)) {
-        for (let k of inventoryItem) {
-            if (k.name === newItem[0]) {
-                if (action === "Sale" && k.quantity >= newItem[1]) {
-                    sell(newItem)
-                } else if (action === "Restock") {
-                    k.quantity += newItem[1];
-                    transactions.push({ type: "restock", itm: k, quantityR: newItem[1], d: new Date() });
-                    console.log(`Restocked ${newItem[1]} ${k.unt} of ${k.n}`);
-                }
-                break;
+}
+
+class Store {
+    constructor() {
+        this.inventoryItems = [];
+        this.transactions = [];
+        this.categories = [];
+        this.customerFieldsRegistry = {};
+    }
+
+    addItem(item) {
+        const newItem = new Item(item.name, item.category, item.quantity, item.price, item.units, item.customerFields);
+        this.inventoryItems.push(newItem);
+
+        if (!this.categories.includes(item.category)) {
+            this.categories.push(item.category);
+        }
+
+        this.transactions.push({ type: "add", item: newItem });
+    }
+
+    editItem(item) {
+        const index = this.inventoryItems.findIndex(i => i.name === item.name);
+        if (index !== -1) {
+            const oldItem = this.inventoryItems[index];
+            this.transactions.push({ type: "edit", old: oldItem, new: item });
+
+            this.inventoryItems[index] = {
+                ...oldItem,
+                name: item.name,
+                category: item.category,
+                quantity: item.quantity,
+                price: item.price,
+                units: item.units,
+                customerFields: item.customerFields || {}
+            };
+            console.log(`Item ${item.name} updated successfully.`);
+        }
+    }
+
+
+    removeItem(item) {
+        const index = this.inventoryItems.findIndex(i => i.name === item.name);
+        if (index !== -1) {
+            this.transactions.push({ type: "delete", item: this.inventoryItems[index] });
+            this.inventoryItems.splice(index, 1);
+            console.log(`Item ${item.name} removed successfully.`);
+        }
+    }
+
+
+    sell(item) {
+        for (let invItem of this.inventoryItems) {
+            if (invItem.name === item.name && invItem.quantity >= item.quantity) {
+                invItem.quantity -= item.quantity;
+                this.transactions.push({ type: "sale", item: invItem, quantity: item.quantity, date: new Date() });
+                console.log(`Sold ${item.quantity} ${invItem.units} of ${invItem.name}`);
             }
         }
     }
-    if (action === "search") console.log(inventoryItem.filter(x => [x.n, x.cat, x.price].some(v => v.toString().toLowerCase().includes(newItem[0].toLowerCase()))));
-    if (action === "viewItem") console.log("=== Inv ===", inventoryItem);
-    if (action === "exportAll") console.log("CSV:\n" + ["Name,Category,Quantity,Price,Unit,AddedAt"].concat(inventoryItem.map(x => Object.values(x).join(','))).join('\n'));
-    if (action === "viewAllTransactions") console.log("Transactions:\n", transactions);
-    if (action === "vwIAg") console.log(inventoryItem.map(x => `${x.n}: ${Math.floor((new Date() - new Date(x.added)) / (1000 * 60 * 60 * 24))}d`).join('\n'));
-    if (action === "Import") newItem[0].forEach(x => doStuff("add", [x.n, x.cat, x.quantity, x.price, x.unit]));
-    // if (action === "addFld" && !customerFieldsRegistory[newItem[0]]) customerFieldsRegistory[newItem[0]] = null;
-    // if (action === "udCFld") inventoryItem.find(x => x.n === newItem[0])?.customerFields[newItem[1]] = newItem[2];
+
+    restock(item) {
+        for (let invItem of this.inventoryItems) {
+            if (invItem.name === item.name) {
+                invItem.quantity += item.quantity;
+                this.transactions.push({ type: "restock", item: invItem, quantity: item.quantity, date: new Date() });
+                console.log(`Restocked ${item.quantity} ${invItem.units} of ${invItem.name}`);
+            }
+        }
+    }
+
+    search(name) {
+        console.log(this.inventoryItems.filter(item =>
+            [item.name, item.category, item.price].some(val =>
+                val.toString().toLowerCase().includes(name.toLowerCase())
+            )
+        ));
+    }
+
+    viewInventory() {
+        console.log("=== Inventory ===", this.inventoryItems);
+    }
+
+    exportAll() {
+        console.log("CSV:\n" + ["Name,Category,Quantity,Price,Unit,AddedAt"].concat(
+            this.inventoryItems.map(item =>
+                [item.name, item.category, item.quantity, item.price, item.units, item.date].join(',')
+            )
+        ).join('\n'));
+    }
+
+    viewAllTransactions() {
+        console.log("Transactions:\n", this.transactions);
+    }
+
+    viewItemAge() {
+        console.log(this.inventoryItems.map(item =>
+            `${item.name}: ${Math.floor((new Date() - new Date(item.date)) / (1000 * 60 * 60 * 24))}d`
+        ).join('\n'));
+    }
+
+    importItems(items) {
+        items.forEach(item => this.addItem(item));
+    }
+
+    doStuff(action, item) {
+        switch (action) {
+            case "add":
+                this.addItem(item);
+                break;
+            case "edit":
+                this.editItem(item.index, item);
+                break;
+            case "remove":
+                this.removeItem(item.index);
+                break;
+            case "Sale":
+                this.sell(item);
+                break;
+            case "Restock":
+                this.restock(item);
+                break;
+            case "search":
+                this.search(item.query);
+                break;
+            case "viewItem":
+                this.viewInventory();
+                break;
+            case "exportAll":
+                this.exportAll();
+                break;
+            case "viewAllTransactions":
+                this.viewAllTransactions();
+                break;
+            case "viewItemAge":
+                this.viewItemAge();
+                break;
+            case "Import":
+                this.importItems(item.items);
+                break;
+            default:
+                console.log("Unknown action:", action);
+        }
+    }
 }
 
-function addItem(newItem){
-    var item = {
-         name: newItem[0], 
-         category: newItem[1], 
-         quantity: newItem[2], 
-         price: newItem[3], 
-         units: newItem[4], 
-         date: new Date(), 
-         customerFields: newItem[5] || {} 
-        };
-    inventoryItem.push(item);
-    if (!categories.includes(newItem[1])) categories.push(newItem[1]);
-    transactions.push({ 
-        type: "add", 
-        item 
-    });
-}
-
-function editItem(item){
-    transactions.push({ 
-        type: "edit", 
-        old: inventoryItem[item[0]], 
-        new: b.slice(1) 
-    });
-    inventoryItem[item[0]] = { 
-        ...inventoryItem[item[0]], 
-        name: item[1], 
-        category: item[2], 
-        quantity: item[3], 
-        price: item[4], 
-        units: item[5], 
-        customerFields: item[6] || {} 
-    };
-}
-
-function removeItem(item){
-    transactions.push({ 
-        type: "delete", 
-        item: inventoryItem[item[0]] 
-    });
-    inventoryItem.splice(item[0], 1);
-}
-
-function sell(item){
-    for (let k of inventoryItem) {
-        if (k.name === item[0]) {
-    k.quantity -= item[1];
-    transactions.push({ type: "sale", item: k, quantity: item[1], date: new Date() });
-    console.log(`Sold ${item[1]} ${k.units} of ${k.name}`);}}
-}
-
-function viewInventory ()
-{
-    console.log("=== Inv ===", inventoryItem);
-
-}
-
-addItem(["laptop", "electronics", 12 , 10 , 20])
-sell(["laptop", 7])
-
-viewInventory();
+const store = new Store();
+store.doStuff("add", { name: "laptop", category: "electronics", quantity: 12, price: 10, units: "pcs" });
+store.doStuff("Sale", { name: "laptop", quantity: 7 });
